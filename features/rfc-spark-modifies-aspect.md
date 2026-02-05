@@ -14,7 +14,7 @@ Motivation
 As SPARK performs modular verification on a per subprogram basis, it is
 necessary to specify in the contract of subprogram not only what they modify,
 but also what they preserve. This can be done currently in a coarse grain
-maner using the parameter mode or the global mode. But it is imprecise, as
+manner using the parameter mode or the global mode. But it is imprecise, as
 mutable parameters and global objects are considered to possibly be entirely
 modified on every call of the subprogram. We want an easy way to specify that
 only some components of an output of the subprogram are potentially modified, or
@@ -40,7 +40,7 @@ stated in its ``Modifies`` aspect:
 
    procedure Write_G_If_B (B : Boolean) with
      Global => (In_Out => G),
-     Modifies => G when not B;
+     Modifies => G when B;
 
    procedure Write_G_If_B (B : Boolean) is
    begin
@@ -79,7 +79,8 @@ are preserved by the call:
 ```
 
 When an array index is used, the expression of the index is always evaluated
-at the beginning of the call. As an example, in the following example, the
+at the beginning of the call, just like the guard.
+As an example, in the following example, the
 index of the preserved element is computed at the beginning of the call, so it
 will be the input value of ``I`` and not its output value.
 
@@ -123,9 +124,24 @@ MODIFIED_OBJECT ::=
 ```
 
 This aspect contains a list of clauses made of one or several modified objects
-and an optional guard. For a set of input, clauses without a guard and clauses
+and an optional guard. There can be overlap between the objects mentioned
+in different clause. For a set of input, clauses without a guard and clauses
 whose guard evaluates to True are said to be *enabled*. There can be more than
 one enabled clause for a set of input.
+
+If a ``MODIFIED_OBJECT`` is a name, it shall denote an entire object or a
+state abstraction that is an output of the subprogram. For example, it would not
+make sense to mention ``B`` in the ``Modifies`` aspect of ``Write_G_If_B``, as
+``B`` is one of its inputs but not one of its outputs.
+
+If a clause of a ``Modifies`` aspect is enabled for a subprogram call,
+then the index expressions of its ``MODIFIED_OBJECTS`` are evaluated once and
+for all at the beginning of the call. This is examplified by ``Write_G1_I`` in
+the previous section. The handling here is similar to what is done for loops in
+Ada, where bounds and container objects are evaluated one and for all at the
+beginning of the loop.
+
+###Verification rules
 
 We say that an object is *unchanged* by a subprogram if its input and its output
 values match in the following way:
@@ -145,33 +161,31 @@ if a concurrent object is modified by a subprogram with a ``Modifies`` aspect,
 the object should always occur alone without a guard in the ``Modifies``
 aspect. The implicit self reference of protected operation is always omitted.
 
-If a ``MODIFIED_OBJECT`` is a name, it shall denote an entire object or a
-state abstraction that is an output of the subprogram. For example, it would not
-make sense to mention ``B`` in the ``Modifies`` aspect of ``Write_G_If_B``, as
-``B`` is one of its inputs but not one of its outputs.
++ If a clause of a ``Modifies`` aspect is enabled for a subprogram call,
+  then each element of the ``MODIFIED_OBJECTS`` shall denote an object both at
+  the beginning and at the end of the call. In particular, discriminant-dependent
+  components shall be present, indices shall be within array bounds,
+  and dereferenced pointers shall not be null.
 
-If a clause of a ``Modifies`` aspect is enabled for a subprogram call,
-then the index expressions of its ``MODIFIED_OBJECTS`` are evaluated once and
-for all at the beginning of the call. This is examplified by ``Write_G1_I`` in
-the previous section. The handling here is similar to what is done for loops in
-Ada, where bounds and container objects are evaluated one and for all at the
-beginning of the loop.
++ When a subprogram annotated with a ``Modifies`` aspect returns normally, all
+  subcomponents reachable from objects that are outputs of the subprogram shall be
+  unchanged but for those reachable from the evaluation of elements of a
+  ``MODIFIED_OBJECTS`` list of an enabled clause.
 
-If a clause of a ``Modifies`` aspect is enabled for a subprogram call,
-then each element of the ``MODIFIED_OBJECTS`` shall denote an object both at
-the beginning and at the end of the call. In particular, discriminant-dependent
-components shall be present, and dereferenced pointers shall not be null.
++ When a subprogram propagates an exception, its parameters that are not known to
+  be passed by reference are exempted from the check. All subcomponents reachable
+  from objects that are outputs of the subprogram except its parameters that might
+  be passed by copy shall be unchanged but for those reachable from the
+  evaluation of elements of a ``MODIFIED_OBJECTS`` list of an enabled clause.
 
-When a subprogram annotated with a ``Modifies`` aspect returns normally, all
-subcomponents reachable from objects that are outputs of the subprogram shall be
-unchanged but for those reachable from the evalutation of elements of a
-``MODIFIED_OBJECTS`` list of an enabled clause.
-
-When a subprogram propagates an exception, its parameter that are not known to
-be passed by reference are exempted from the check. All subcomponents reachable
-from objects that are outputs of the subprogram except its parameters that might
-be passed by copy shall be unchanged but for those reachable from the
-evalutation of elements of a ``MODIFIED_OBJECTS`` list of an enabled clause.
++ When a subprogram terminates the execution of the partition, as can be
+  specified with the ``Program_Exit`` aspect, outputs that are not read
+  in the assertion expression of the ``Program_Exit`` aspect are exempted from
+  the check. All subcomponents reachable from objects which are output of the
+  subprogram, except these not occurring outside an ``'Old`` attribute
+  reference in the assertion expression of the ``Program_Exit`` aspect,
+  shall be unchanged but for those reachable from the evaluation of a ``MODIFIED_OBJECTS``
+  list of an enabled clause.
 
 Rationale and alternatives
 ==========================
@@ -211,7 +225,7 @@ even set operations and comprehension:
 @ assigns { q->hd | struct list *q ; reachable(p,q) } ;
 ```
 
-This quite different from what we propose because they are modelling the memory,
+This quite different from what we propose because they are modeling the memory,
 which we do not need to do in SPARK.
 
 In WhyMl, `writes` contracts can include separate mutable fields. As far as I
@@ -242,12 +256,19 @@ The design for that might rely on a set of special primitives that could be
 mentioned in the clause and that would be considered to be preserved if not
 mentioned.
 
-Think about what the natural extension and evolution of your proposal would
-be and how it would affect the language and project as a whole in a holistic
-way. Try to use this section as a tool to more fully consider all possible
-interactions with the project and language in your proposal.
-Also consider how the this all fits into the roadmap for the project
-and of the relevant sub-team.
+Another direction of extension would be to recover part of the power of
+dual ``Preserves`` contract by excluding sub-components. This would let the
+user specify behaviors like 'this part may be modified, except for this specific sub-part'.
+One way to express such behavior would be to use negated objects to remove sub-components
+from the list of modified objects.
+```ada
+  Modifies => ((A, not A(0)), not A(1) when Condition)
+```
+to mean that A may be modified, but not subcomponent A (0), and if Condition is true,
+neither is A (1).
+The interpretation of negated guards would be that subcomponents that may be modified
+are the ones reachable from some modified object in an enabled clause, without going
+through any negated modified object in an enabled clause. It should be an error
+to mention an object under negation if none of its ancestors occur in any clause of
+the aspect.
 
-This is also a good place to "dump ideas", if they are out of scope for the
-RFC you are writing 
