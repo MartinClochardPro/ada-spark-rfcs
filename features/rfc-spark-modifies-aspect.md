@@ -1,6 +1,6 @@
 - Feature Name: spark_modifies_aspect
 - Start Date: 2025-02-28
-- Status: Planning
+- Status: Ready for prototyping
 
 Summary
 =======
