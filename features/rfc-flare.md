@@ -1,6 +1,6 @@
-- Feature Name:
-- Start Date:
-- Status:
+- Feature Name:flare-pragma
+- Start Date: 2026-02-26
+- Status: Ready for prototyping
 
 # Summary
 
